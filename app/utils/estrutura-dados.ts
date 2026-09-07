@@ -20,7 +20,16 @@ export interface Transaction {
   date: string; // Formato YYYY-MM-DD
 }
 
-export type TabOption = "settings" | "transactions" | "summary";
+export type TabOption = "settings" | "transactions" | "summary" | "history";
+
+export interface MonthlyHistory {
+  monthKey: string; // Formato "YYYY-MM" (ex: "2026-09")
+  monthLabel: string; // Formato legível (ex: "Setembro 2026")
+  totalIncome: number;
+  totalExpenses: number;
+  balance: number;
+  expensesByCategory: Record<string, number>; // idDaCategoria -> valorTotal
+}
 
 // ==========================================
 // 2. ESTRUTURAS AUXILIARES DO RESUMO / DASHBOARD

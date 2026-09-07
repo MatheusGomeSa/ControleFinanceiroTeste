@@ -3,6 +3,7 @@ import {
   Transaction,
   FinancialOverview,
   CategorySummary,
+  MonthlyHistory,
 } from "../utils/estrutura-dados";
 
 /**
@@ -67,4 +68,62 @@ export function calculateFinancialOverview(
     availablePercentage,
     categoriesSummary,
   };
+}
+
+export function calculateMonthlyHistory(
+  transactions: Transaction[],
+  categories: Category[],
+): MonthlyHistory[] {
+  const historyMap = new Map<string, MonthlyHistory>();
+
+  transactions.forEach((tx) => {
+    // Extrai "YYYY-MM" do campo date ("2026-09-05")
+    const monthKey = tx.date.substring(0, 7);
+
+    if (!historyMap.has(monthKey)) {
+      const [year, month] = monthKey.split("-");
+      const dateObj = new Date(Number(year), Number(month) - 1, 1);
+      const monthLabel = dateObj.toLocaleDateString("pt-BR", {
+        month: "long",
+        year: "numeric",
+      });
+
+      // Capitaliza a primeira letra do mês
+      const formattedLabel =
+        monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
+
+      const initialCategoryMap: Record<string, number> = {};
+      categories.forEach((cat) => {
+        initialCategoryMap[cat.id] = 0;
+      });
+
+      historyMap.set(monthKey, {
+        monthKey,
+        monthLabel: formattedLabel,
+        totalIncome: 0,
+        totalExpenses: 0,
+        balance: 0,
+        expensesByCategory: initialCategoryMap,
+      });
+    }
+
+    const item = historyMap.get(monthKey)!;
+
+    if (tx.type === "income") {
+      item.totalIncome += tx.amount;
+    } else {
+      item.totalExpenses += tx.amount;
+      if (tx.categoryId) {
+        item.expensesByCategory[tx.categoryId] =
+          (item.expensesByCategory[tx.categoryId] || 0) + tx.amount;
+      }
+    }
+
+    item.balance = item.totalIncome - item.totalExpenses;
+  });
+
+  // Retorna ordenado do mês mais recente para o mais antigo
+  return Array.from(historyMap.values()).sort((a, b) =>
+    b.monthKey.localeCompare(a.monthKey),
+  );
 }

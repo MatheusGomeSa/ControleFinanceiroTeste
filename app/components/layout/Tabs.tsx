@@ -11,6 +11,7 @@ export const Tabs: React.FC<TabsProps> = ({ activeTab, onSelectTab }) => {
     { id: "settings", label: "Configuração" },
     { id: "transactions", label: "Lançamentos" },
     { id: "summary", label: "Resumo" },
+    { id: "history", label: "Histórico" },
   ];
 
   return (

@@ -5,11 +5,19 @@ import {
   Category,
   Transaction,
   TabOption,
-  INITIAL_CATEGORIES,
-  INITIAL_TRANSACTIONS,
   getTotalAllocatedPercentage,
 } from "./utils/estrutura-dados";
-import { calculateFinancialOverview } from "./lib/calculations";
+import {
+  calculateFinancialOverview,
+  calculateMonthlyHistory,
+} from "./lib/calculations";
+import {
+  getSheetData,
+  syncCategories,
+  addTransaction,
+  syncTransactions,
+} from "./services/sheetsService";
+
 import { Tabs } from "./components/layout/Tabs";
 import { CategorySlider } from "./components/settings/CategorySlider";
 import { CategoryModal } from "./components/settings/CategoryModal";
@@ -17,107 +25,107 @@ import { TransactionList } from "./components/transactions/TransactionList";
 import { TransactionModal } from "./components/transactions/TransactionModal";
 import { SummaryCards } from "./components/dashboard/SummaryCards";
 import { CategoryComparison } from "./components/dashboard/CategoryComparison";
+import { HistoryView } from "./components/dashboard/HistoryView";
+import { MonthSelector } from "./components/settings/MonthSelector";
 
 export default function FinanceDashboard() {
+  // Estado para controlar o mês de visualização (Padrão: Mês Atual "YYYY-MM")
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const today = new Date();
+    return today.toISOString().substring(0, 7);
+  });
+
   const [activeTab, setActiveTab] = useState<TabOption>("summary");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // 1. Inicialização do estado via Lazy Initializer (evita setState síncrono dentro de useEffect)
-  const [categories, setCategories] = useState<Category[]>(() => {
-    if (typeof window === "undefined") return INITIAL_CATEGORIES;
-    const saved = localStorage.getItem("@finance:categories");
-    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
-  });
-
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    if (typeof window === "undefined") return INITIAL_TRANSACTIONS;
-    const saved = localStorage.getItem("@finance:transactions");
-    return saved ? JSON.parse(saved) : INITIAL_TRANSACTIONS;
-  });
+  // Estados dos Modais
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+
+  // 1. Carregamento inicial direto da planilha Google Sheets
+  useEffect(() => {
+    async function loadInitialData() {
+      setIsLoading(true);
+      const data = await getSheetData();
+      setCategories(data.categories);
+      setTransactions(data.transactions);
+      setIsLoading(false);
+    }
+
+    loadInitialData();
+  }, []);
+
+  // Handlers para Categorias
+  const handleUpdatePercentage = async (id: string, newPercentage: number) => {
+    const updatedCategories = categories.map((cat) =>
+      cat.id === id ? { ...cat, percentage: newPercentage } : cat,
+    );
+
+    setCategories(updatedCategories);
+    setIsSyncing(true);
+    await syncCategories(updatedCategories);
+    setIsSyncing(false);
+  };
 
   const handleOpenCreateCategory = () => {
     setEditingCategory(null);
     setIsCategoryModalOpen(true);
   };
 
-  // 2. Efeitos apenas para persistir dados (sincronizar estado React -> localStorage)
-  useEffect(() => {
-    localStorage.setItem("@finance:categories", JSON.stringify(categories));
-  }, [categories]);
-
-  useEffect(() => {
-    localStorage.setItem("@finance:transactions", JSON.stringify(transactions));
-  }, [transactions]);
-
-  // Modais
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
-
-  // Handlers para Categorias
-  const handleUpdatePercentage = (id: string, newPercentage: number) => {
-    setCategories((prev) =>
-      prev.map((cat) =>
-        cat.id === id ? { ...cat, percentage: newPercentage } : cat,
-      ),
-    );
-  };
   const handleOpenEditCategory = (category: Category) => {
     setEditingCategory(category);
     setIsCategoryModalOpen(true);
   };
 
-  const handleSaveCategory = (data: {
+  const handleSaveCategory = async (data: {
     id?: string;
     name: string;
     percentage: number;
     color: string;
   }) => {
+    let updatedCategories: Category[];
+
     if (data.id) {
-      // Modo Edição
-      setCategories((prev) =>
-        prev.map((cat) =>
-          cat.id === data.id
-            ? {
-                ...cat,
-                name: data.name,
-                percentage: data.percentage,
-                color: data.color,
-              }
-            : cat,
-        ),
+      updatedCategories = categories.map((cat) =>
+        cat.id === data.id
+          ? {
+              ...cat,
+              name: data.name,
+              percentage: data.percentage,
+              color: data.color,
+            }
+          : cat,
       );
     } else {
-      // Modo Criação
       const newCategory: Category = {
         id: `cat-${Date.now()}`,
         name: data.name,
         percentage: data.percentage,
         color: data.color,
       };
-      setCategories((prev) => [...prev, newCategory]);
+      updatedCategories = [...categories, newCategory];
     }
+
+    setCategories(updatedCategories);
+    setIsSyncing(true);
+    await syncCategories(updatedCategories);
+    setIsSyncing(false);
   };
 
-  const handleAddCategory = (
-    name: string,
-    initialPercentage: number,
-    color: string,
-  ) => {
-    const newCategory: Category = {
-      id: `cat-${Date.now()}`,
-      name,
-      percentage: initialPercentage,
-      color,
-    };
-    setCategories((prev) => [...prev, newCategory]);
-  };
-
-  const handleRemoveCategory = (id: string) => {
-    setCategories((prev) => prev.filter((cat) => cat.id !== id));
+  const handleRemoveCategory = async (id: string) => {
+    const updatedCategories = categories.filter((cat) => cat.id !== id);
+    setCategories(updatedCategories);
+    setIsSyncing(true);
+    await syncCategories(updatedCategories);
+    setIsSyncing(false);
   };
 
   // Handlers para Lançamentos
-  const handleAddTransaction = (newTxData: {
+  const handleAddTransaction = async (newTxData: {
     description: string;
     amount: number;
     type: "income" | "expense";
@@ -128,27 +136,58 @@ export default function FinanceDashboard() {
       id: `tx-${Date.now()}`,
       ...newTxData,
     };
+
     setTransactions((prev) => [newTx, ...prev]);
+    setIsSyncing(true);
+    await addTransaction(newTx);
+    setIsSyncing(false);
   };
 
-  const handleRemoveTransaction = (id: string) => {
-    setTransactions((prev) => prev.filter((tx) => tx.id !== id));
+  const handleRemoveTransaction = async (id: string) => {
+    const updatedTransactions = transactions.filter((tx) => tx.id !== id);
+    setTransactions(updatedTransactions);
+    setIsSyncing(true);
+    await syncTransactions(updatedTransactions);
+    setIsSyncing(false);
   };
 
-  const overview = calculateFinancialOverview(categories, transactions);
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-500 gap-3">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm font-medium">Conectando ao Google Sheets...</p>
+      </div>
+    );
+  }
+
+  // Filtra os lançamentos do mês selecionado para o Resumo
+  const filteredTransactions = transactions.filter((tx) =>
+    tx.date.startsWith(selectedMonth),
+  );
+  const overview = calculateFinancialOverview(categories, filteredTransactions);
   const totalAllocated = getTotalAllocatedPercentage(categories);
   const availablePercentage = Math.max(0, 100 - totalAllocated);
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <header className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">
-            Controle Financeiro
-          </h1>
-          <p className="text-sm text-slate-500">
-            Planejamento percentual de orçamento e controle de desvios
-          </p>
+        <header className="mb-6 flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Controle Financeiro
+            </h1>
+            <p className="text-sm text-slate-500">
+              Integrado ao Google Sheets em tempo real
+            </p>
+          </div>
+
+          {/* Indicador de Sincronização */}
+          {isSyncing && (
+            <span className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full font-medium border border-blue-200 animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-blue-600" />
+              Sincronizando...
+            </span>
+          )}
         </header>
 
         {/* Navegação por Abas */}
@@ -202,6 +241,7 @@ export default function FinanceDashboard() {
                 />
               ))}
             </div>
+
             <CategoryModal
               key={editingCategory ? editingCategory.id : "new-category-modal"}
               isOpen={isCategoryModalOpen}
@@ -232,16 +272,31 @@ export default function FinanceDashboard() {
           </div>
         )}
 
-        {/* ABA 3: RESUMO */}
+        {/* ABA 3: RESUMO COM FILTRO DE MÊS */}
         {activeTab === "summary" && (
           <div>
+            {/* Seletor de Período */}
+            <MonthSelector
+              selectedMonth={selectedMonth}
+              onChangeMonth={setSelectedMonth}
+            />
+
             <SummaryCards
               totalIncome={overview.totalIncome}
               totalExpenses={overview.totalExpenses}
               balance={overview.balance}
             />
+
             <CategoryComparison summaries={overview.categoriesSummary} />
           </div>
+        )}
+
+        {/* ABA 4: HISTÓRICO */}
+        {activeTab === "history" && (
+          <HistoryView
+            history={calculateMonthlyHistory(transactions, categories)}
+            categories={categories}
+          />
         )}
       </div>
     </main>

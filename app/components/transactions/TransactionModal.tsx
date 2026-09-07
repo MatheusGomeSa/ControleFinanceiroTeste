@@ -140,7 +140,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Data
+              Data do Lançamento
             </label>
             <input
               type="date"
@@ -149,6 +149,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               onChange={(e) => setDate(e.target.value)}
               className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <span className="text-xs text-slate-400 mt-1 block">
+              Você pode selecionar datas passadas para lançamentos retroativos.
+            </span>
           </div>
 
           <div className="flex justify-end gap-2 mt-2">
